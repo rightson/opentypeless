@@ -4,12 +4,62 @@ use std::time::Duration;
 
 const ANTHROPIC_API_HOST: &str = "api.anthropic.com";
 const OPENAI_API_HOST: &str = "api.openai.com";
-const ANTHROPIC_VERSION: &str = "2023-06-01";
+pub(crate) const ANTHROPIC_VERSION: &str = "2023-06-01";
+
+use super::gateway::{self, LlmGatewayConfig};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LlmApiKind {
     OpenAiCompatible,
     AnthropicMessages,
+    GeminiGenerateContent,
+}
+
+/// Everything needed to talk to a configured LLM endpoint. `gateway` is only
+/// set when the provider is the enterprise gateway; all other providers keep
+/// their host-based protocol detection.
+#[derive(Debug, Clone, Copy)]
+pub struct LlmTarget<'a> {
+    pub provider: &'a str,
+    pub base_url: &'a str,
+    pub gateway: Option<&'a LlmGatewayConfig>,
+}
+
+impl<'a> LlmTarget<'a> {
+    pub fn new(provider: &'a str, base_url: &'a str, gateway: &'a LlmGatewayConfig) -> Self {
+        Self {
+            provider,
+            base_url,
+            gateway: gateway::is_gateway_provider(provider).then_some(gateway),
+        }
+    }
+
+    pub fn plain(provider: &'a str, base_url: &'a str) -> Self {
+        Self {
+            provider,
+            base_url,
+            gateway: None,
+        }
+    }
+
+    pub fn from_config(config: &'a crate::storage::AppConfig) -> Self {
+        Self::new(
+            &config.llm_provider,
+            &config.llm_base_url,
+            &config.llm_gateway,
+        )
+    }
+
+    pub fn api_kind(&self) -> LlmApiKind {
+        match self.gateway {
+            Some(gateway) => match gateway.protocol() {
+                gateway::PROTOCOL_ANTHROPIC => LlmApiKind::AnthropicMessages,
+                gateway::PROTOCOL_GEMINI => LlmApiKind::GeminiGenerateContent,
+                _ => LlmApiKind::OpenAiCompatible,
+            },
+            None => detect_api_kind(self.provider, self.base_url),
+        }
+    }
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -72,10 +122,52 @@ fn anthropic_api_root(path: &str) -> String {
     }
 }
 
+/// Root of a Gemini-style API (`.../v1beta`), tolerating a pasted `/models`
+/// or full `/models/<model>:generateContent` URL.
+fn gemini_api_root(path: &str) -> String {
+    let path = path.trim_end_matches('/');
+    if let Some(index) = path.find("/models") {
+        let rest = &path[index..];
+        if rest == "/models" || rest.starts_with("/models/") {
+            return path[..index].to_string();
+        }
+    }
+    path.to_string()
+}
+
+fn gemini_model_segment(model: &str) -> Result<String, String> {
+    let model = model.trim();
+    let model = model.strip_prefix("models/").unwrap_or(model);
+    if model.is_empty() {
+        return Err("A model is required for the Gemini protocol".to_string());
+    }
+    if model.contains(['/', '?', '#']) {
+        return Err("Gemini model name must not contain '/', '?' or '#'".to_string());
+    }
+    Ok(model.to_string())
+}
+
 pub fn chat_endpoint(provider: &str, base_url: &str) -> Result<String, String> {
-    let kind = detect_api_kind(provider, base_url);
-    let mut url = parse_http_url(base_url)?;
+    chat_endpoint_for(&LlmTarget::plain(provider, base_url), "", false)
+}
+
+/// Chat endpoint for a target. `model` and `stream` only matter for Gemini,
+/// whose URL encodes both.
+pub fn chat_endpoint_for(target: &LlmTarget, model: &str, stream: bool) -> Result<String, String> {
+    let kind = target.api_kind();
+    let mut url = parse_http_url(target.base_url)?;
     match kind {
+        LlmApiKind::GeminiGenerateContent => {
+            let root = gemini_api_root(url.path());
+            let model = gemini_model_segment(model)?;
+            let method = if stream {
+                "streamGenerateContent"
+            } else {
+                "generateContent"
+            };
+            url.set_path(&format!("{root}/models/{model}:{method}"));
+            url.set_query(stream.then_some("alt=sse"));
+        }
         LlmApiKind::AnthropicMessages => {
             let root = anthropic_api_root(url.path());
             url.set_path(&format!("{root}/messages"));
@@ -91,9 +183,18 @@ pub fn chat_endpoint(provider: &str, base_url: &str) -> Result<String, String> {
 }
 
 pub fn models_endpoint(provider: &str, base_url: &str) -> Result<String, String> {
-    let kind = detect_api_kind(provider, base_url);
-    let mut url = parse_http_url(base_url)?;
+    models_endpoint_for(&LlmTarget::plain(provider, base_url))
+}
+
+pub fn models_endpoint_for(target: &LlmTarget) -> Result<String, String> {
+    let kind = target.api_kind();
+    let mut url = parse_http_url(target.base_url)?;
     match kind {
+        LlmApiKind::GeminiGenerateContent => {
+            let root = gemini_api_root(url.path());
+            url.set_path(&format!("{root}/models"));
+            url.set_query(None);
+        }
         LlmApiKind::AnthropicMessages => {
             let root = anthropic_api_root(url.path());
             url.set_path(&format!("{root}/models"));
@@ -126,7 +227,14 @@ fn is_reasoning_model_without_sampling_controls(model: &str) -> bool {
 }
 
 pub fn request_timeout(provider: &str, base_url: &str, model: &str) -> Duration {
-    if detect_api_kind(provider, base_url) == LlmApiKind::AnthropicMessages
+    request_timeout_for(&LlmTarget::plain(provider, base_url), model)
+}
+
+pub fn request_timeout_for(target: &LlmTarget, model: &str) -> Duration {
+    // Corporate gateways add policy checks and logging hops; give them the
+    // longer budget regardless of protocol.
+    if target.gateway.is_some()
+        || target.api_kind() == LlmApiKind::AnthropicMessages
         || is_reasoning_model_without_sampling_controls(model)
     {
         Duration::from_secs(60)
@@ -156,7 +264,61 @@ pub fn build_chat_body(
     temperature: f64,
     stream: bool,
 ) -> Value {
-    match detect_api_kind(provider, base_url) {
+    build_chat_body_for(
+        &LlmTarget::plain(provider, base_url),
+        model,
+        messages,
+        max_tokens,
+        temperature,
+        stream,
+    )
+}
+
+fn build_gemini_body(messages: Vec<Value>, max_tokens: u32, temperature: f64) -> Value {
+    let mut system_parts = Vec::new();
+    let mut contents = Vec::new();
+    for message in messages {
+        let text = message["content"].as_str().unwrap_or_default().to_string();
+        match message["role"].as_str() {
+            Some("system") => {
+                if !text.trim().is_empty() {
+                    system_parts.push(json!({ "text": text }));
+                }
+            }
+            Some("assistant") | Some("model") => {
+                contents.push(json!({ "role": "model", "parts": [{ "text": text }] }));
+            }
+            _ => contents.push(json!({ "role": "user", "parts": [{ "text": text }] })),
+        }
+    }
+    let mut body = json!({
+        "contents": contents,
+        "generationConfig": {
+            "maxOutputTokens": max_tokens,
+            "temperature": temperature.clamp(0.0, 2.0)
+        }
+    });
+    if !system_parts.is_empty() {
+        body.as_object_mut().unwrap().insert(
+            "systemInstruction".to_string(),
+            json!({ "parts": system_parts }),
+        );
+    }
+    body
+}
+
+pub fn build_chat_body_for(
+    target: &LlmTarget,
+    model: &str,
+    messages: Vec<Value>,
+    max_tokens: u32,
+    temperature: f64,
+    stream: bool,
+) -> Value {
+    let provider = target.provider;
+    let base_url = target.base_url;
+    match target.api_kind() {
+        LlmApiKind::GeminiGenerateContent => build_gemini_body(messages, max_tokens, temperature),
         LlmApiKind::AnthropicMessages => {
             let mut system_parts = Vec::new();
             let mut anthropic_messages = Vec::new();
@@ -194,7 +356,12 @@ pub fn build_chat_body(
                 "stream": stream
             });
             let object = body.as_object_mut().unwrap();
-            if is_direct_openai(provider, base_url) {
+            // Gateways usually front Azure/OpenAI deployments, which reject
+            // sampling controls on reasoning models just like the direct API.
+            let strict_openai_fields = is_direct_openai(provider, base_url)
+                || (target.gateway.is_some()
+                    && is_reasoning_model_without_sampling_controls(model));
+            if strict_openai_fields {
                 object.insert("max_completion_tokens".to_string(), json!(max_tokens));
                 if !is_reasoning_model_without_sampling_controls(model) {
                     object.insert("temperature".to_string(), json!(temperature));
@@ -214,8 +381,36 @@ pub fn apply_auth_headers(
     base_url: &str,
     api_key: &str,
 ) -> RequestBuilder {
+    apply_auth_headers_for(request, &LlmTarget::plain(provider, base_url), api_key)
+}
+
+/// Applies auth (and, for gateways, the configured extra headers). Invalid
+/// gateway headers are rejected earlier by `LlmGatewayConfig::validate`; if
+/// one slips through it is skipped with a warning rather than sent malformed.
+pub fn apply_auth_headers_for(
+    request: RequestBuilder,
+    target: &LlmTarget,
+    api_key: &str,
+) -> RequestBuilder {
+    if let Some(gateway) = target.gateway {
+        return match gateway.request_headers(api_key) {
+            Ok(headers) => request.headers(headers),
+            Err(error) => {
+                tracing::warn!("Skipping invalid gateway headers: {error}");
+                request
+            }
+        };
+    }
+    let provider = target.provider;
     let api_key = api_key.trim();
-    match detect_api_kind(provider, base_url) {
+    match target.api_kind() {
+        LlmApiKind::GeminiGenerateContent => {
+            if api_key.is_empty() {
+                request
+            } else {
+                request.header("x-goog-api-key", api_key)
+            }
+        }
         LlmApiKind::AnthropicMessages => request
             .header("x-api-key", api_key)
             .header("anthropic-version", ANTHROPIC_VERSION),
@@ -229,8 +424,20 @@ pub fn apply_auth_headers(
     }
 }
 
+fn gemini_candidate_text(body: &Value) -> String {
+    body["candidates"][0]["content"]["parts"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|part| !part["thought"].as_bool().unwrap_or(false))
+        .filter_map(|part| part["text"].as_str())
+        .collect::<Vec<_>>()
+        .join("")
+}
+
 pub fn response_text(kind: LlmApiKind, body: &Value) -> String {
     match kind {
+        LlmApiKind::GeminiGenerateContent => gemini_candidate_text(body),
         LlmApiKind::AnthropicMessages => body["content"]
             .as_array()
             .into_iter()
@@ -253,6 +460,20 @@ pub fn response_text(kind: LlmApiKind, body: &Value) -> String {
 
 pub fn parse_stream_event(kind: LlmApiKind, body: &Value) -> StreamEvent {
     match kind {
+        LlmApiKind::GeminiGenerateContent => {
+            if let Some(message) = body["error"]["message"].as_str() {
+                return StreamEvent {
+                    error: Some(message.to_string()),
+                    ..StreamEvent::default()
+                };
+            }
+            let text = gemini_candidate_text(body);
+            StreamEvent {
+                text: (!text.is_empty()).then_some(text),
+                done: body["candidates"][0]["finishReason"].is_string(),
+                ..StreamEvent::default()
+            }
+        }
         LlmApiKind::AnthropicMessages => {
             if body["type"].as_str() == Some("error") {
                 return StreamEvent {
@@ -452,5 +673,171 @@ mod tests {
         );
         assert_eq!(event.text.as_deref(), Some("Hello"));
         assert!(!event.done);
+    }
+
+    fn gateway(protocol: &str) -> LlmGatewayConfig {
+        LlmGatewayConfig {
+            protocol: protocol.to_string(),
+            ..LlmGatewayConfig::default()
+        }
+    }
+
+    #[test]
+    fn gateway_target_only_applies_to_gateway_provider() {
+        let config = gateway("anthropic");
+        let openai = LlmTarget::new("openai", "https://api.openai.com/v1", &config);
+        assert!(openai.gateway.is_none());
+        assert_eq!(openai.api_kind(), LlmApiKind::OpenAiCompatible);
+
+        let gw = LlmTarget::new("gateway", "https://llm.corp.example/v1", &config);
+        assert_eq!(gw.api_kind(), LlmApiKind::AnthropicMessages);
+    }
+
+    #[test]
+    fn gateway_endpoints_follow_the_selected_protocol() {
+        let openai = gateway("openai");
+        let target = LlmTarget::new("gateway", "https://llm.corp.example/openai/v1", &openai);
+        assert_eq!(
+            chat_endpoint_for(&target, "gpt-4o", true).unwrap(),
+            "https://llm.corp.example/openai/v1/chat/completions"
+        );
+        assert_eq!(
+            models_endpoint_for(&target).unwrap(),
+            "https://llm.corp.example/openai/v1/models"
+        );
+
+        let anthropic = gateway("anthropic");
+        let target = LlmTarget::new(
+            "gateway",
+            "https://llm.corp.example/anthropic/v1",
+            &anthropic,
+        );
+        assert_eq!(
+            chat_endpoint_for(&target, "claude-sonnet-4-5", true).unwrap(),
+            "https://llm.corp.example/anthropic/v1/messages"
+        );
+
+        let gemini = gateway("gemini");
+        let target = LlmTarget::new("gateway", "https://llm.corp.example/gemini/v1beta", &gemini);
+        assert_eq!(
+            chat_endpoint_for(&target, "models/gemini-2.5-flash", true).unwrap(),
+            "https://llm.corp.example/gemini/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse"
+        );
+        assert_eq!(
+            chat_endpoint_for(&target, "gemini-2.5-flash", false).unwrap(),
+            "https://llm.corp.example/gemini/v1beta/models/gemini-2.5-flash:generateContent"
+        );
+        assert_eq!(
+            models_endpoint_for(&target).unwrap(),
+            "https://llm.corp.example/gemini/v1beta/models"
+        );
+        let pasted = LlmTarget::new(
+            "gateway",
+            "https://llm.corp.example/v1beta/models/gemini-2.5-flash:generateContent",
+            &gemini,
+        );
+        assert_eq!(
+            chat_endpoint_for(&pasted, "gemini-2.5-pro", false).unwrap(),
+            "https://llm.corp.example/v1beta/models/gemini-2.5-pro:generateContent"
+        );
+        assert!(chat_endpoint_for(&target, " ", false).is_err());
+    }
+
+    #[test]
+    fn gemini_body_moves_system_prompt_and_maps_roles() {
+        let config = gateway("gemini");
+        let target = LlmTarget::new("gateway", "https://llm.corp.example/v1beta", &config);
+        let mut msgs = messages();
+        msgs.push(json!({"role": "assistant", "content": "Hi"}));
+        let body = build_chat_body_for(&target, "gemini-2.5-flash", msgs, 128, 0.3, true);
+        assert_eq!(body["systemInstruction"]["parts"][0]["text"], "Be concise.");
+        assert_eq!(body["contents"][0]["role"], "user");
+        assert_eq!(body["contents"][0]["parts"][0]["text"], "Hello");
+        assert_eq!(body["contents"][1]["role"], "model");
+        assert_eq!(body["generationConfig"]["maxOutputTokens"], 128);
+        assert!(body.get("model").is_none());
+        assert!(body.get("stream").is_none());
+    }
+
+    #[test]
+    fn gateway_openai_reasoning_models_use_strict_fields() {
+        let config = gateway("openai");
+        let target = LlmTarget::new("gateway", "https://llm.corp.example/v1", &config);
+        let body = build_chat_body_for(&target, "gpt-5", messages(), 64, 0.3, false);
+        assert_eq!(body["max_completion_tokens"], 64);
+        assert!(body.get("temperature").is_none());
+        let body = build_chat_body_for(&target, "gpt-4o", messages(), 64, 0.3, false);
+        assert_eq!(body["max_tokens"], 64);
+        assert_eq!(body["temperature"], 0.3);
+    }
+
+    #[test]
+    fn gateway_auth_headers_use_custom_header_and_extras() {
+        let config = LlmGatewayConfig {
+            protocol: "openai".to_string(),
+            auth_header: "api-key".to_string(),
+            extra_headers: vec![gateway::GatewayHeader {
+                name: "X-Department".to_string(),
+                value: "rd".to_string(),
+            }],
+            ..LlmGatewayConfig::default()
+        };
+        let target = LlmTarget::new("gateway", "https://llm.corp.example/v1", &config);
+        let request = apply_auth_headers_for(
+            reqwest::Client::new().post("https://llm.corp.example/v1/chat/completions"),
+            &target,
+            "corp-key",
+        )
+        .build()
+        .unwrap();
+        assert_eq!(request.headers()["api-key"], "corp-key");
+        assert_eq!(request.headers()["x-department"], "rd");
+        assert!(request.headers().get("Authorization").is_none());
+
+        let anthropic = gateway("anthropic");
+        let target = LlmTarget::new("gateway", "https://llm.corp.example/v1", &anthropic);
+        let request = apply_auth_headers_for(
+            reqwest::Client::new().post("https://llm.corp.example/v1/messages"),
+            &target,
+            "corp-key",
+        )
+        .build()
+        .unwrap();
+        assert_eq!(request.headers()["x-api-key"], "corp-key");
+        assert_eq!(request.headers()["anthropic-version"], ANTHROPIC_VERSION);
+    }
+
+    #[test]
+    fn gemini_parsers_skip_thoughts_and_detect_finish() {
+        let body = json!({
+            "candidates": [{
+                "content": {"parts": [
+                    {"text": "thinking...", "thought": true},
+                    {"text": "Hello"},
+                    {"text": " world"}
+                ]},
+                "finishReason": "STOP"
+            }]
+        });
+        assert_eq!(
+            response_text(LlmApiKind::GeminiGenerateContent, &body),
+            "Hello world"
+        );
+        let event = parse_stream_event(LlmApiKind::GeminiGenerateContent, &body);
+        assert_eq!(event.text.as_deref(), Some("Hello world"));
+        assert!(event.done);
+
+        let partial = json!({"candidates": [{"content": {"parts": [{"text": "Hel"}]}}]});
+        let event = parse_stream_event(LlmApiKind::GeminiGenerateContent, &partial);
+        assert_eq!(event.text.as_deref(), Some("Hel"));
+        assert!(!event.done);
+
+        let error = json!({"error": {"message": "quota"}});
+        assert_eq!(
+            parse_stream_event(LlmApiKind::GeminiGenerateContent, &error)
+                .error
+                .as_deref(),
+            Some("quota")
+        );
     }
 }

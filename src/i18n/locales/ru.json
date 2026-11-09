@@ -472,7 +472,37 @@
     "mappingResetConfirm": "Удалить все сопоставления приложений, сохранённые только на этом устройстве?",
     "mappingResetConfirmAction": "Сбросить сопоставления",
     "mappingNoMappings": "Нет пользовательских сопоставлений приложений",
-    "dictationMode": "Режим диктовки"
+    "dictationMode": "Режим диктовки",
+    "gateway": {
+      "description": "Подключение к внутреннему шлюзу с API, совместимым с OpenAI, Anthropic или Gemini. Запросы отправляются только на указанный ниже Base URL.",
+      "protocol": "Протокол API",
+      "protocolOpenai": "OpenAI Chat Completions",
+      "protocolAnthropic": "Anthropic Messages",
+      "protocolGemini": "Gemini generateContent",
+      "authMode": "Источник ключа",
+      "authStatic": "Сохранённый API-ключ",
+      "authCommand": "Получать ключ командой",
+      "authNone": "Без ключа (шлюз проверяет доступ иначе)",
+      "baseUrlPlaceholder": "https://llm-gateway.example.com/v1",
+      "keyCommand": "Команда для ключа",
+      "keyCommandPlaceholder": "%LOCALAPPDATA%\\Corp\\llm-token.exe",
+      "keyCommandHint": "Путь или имя исполняемого файла; запускается напрямую, без оболочки. %VAR% и ${VAR} раскрываются. В stdout должен выводиться только ключ (или JSON).",
+      "keyCommandArgs": "Аргументы",
+      "keyCommandArgsPlaceholder": "--audience\nllm-gateway",
+      "keyCommandArgsHint": "Один аргумент на строку. Кавычки не нужны.",
+      "keyJsonField": "Поле JSON (необязательно)",
+      "keyJsonFieldPlaceholder": "accessToken",
+      "keyCacheSeconds": "Повторно использовать ключ (секунды)",
+      "keyTimeoutSeconds": "Тайм-аут команды (секунды)",
+      "authHeader": "Заголовок авторизации",
+      "authPrefix": "Префикс значения",
+      "extraHeaders": "Дополнительные заголовки",
+      "headerName": "Имя заголовка",
+      "headerValue": "Значение",
+      "removeHeader": "Удалить заголовок",
+      "addHeader": "Добавить заголовок",
+      "extraHeadersHint": "Отправляются с каждым запросом к шлюзу, например ID арендатора или проекта. Значения хранятся в файле настроек — не указывайте здесь секреты."
+    }
   },
   "contextFamilies": {
     "email": "Электронная почта",
@@ -888,7 +918,8 @@
       "claude": "Claude",
       "ollama": "Ollama (Локальный)",
       "openrouter": "OpenRouter",
-      "cloud": "Облако OpenTypeless"
+      "cloud": "Облако OpenTypeless",
+      "gateway": "Корпоративный LLM-шлюз"
     }
   }
 }

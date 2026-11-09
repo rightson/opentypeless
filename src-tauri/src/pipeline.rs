@@ -8,9 +8,7 @@ use tokio::sync::{mpsc, Notify};
 use crate::app_detector;
 use crate::app_detector::types::{RecordingContext, TargetAppGuard};
 use crate::audio::{AudioCaptureHandle, AudioConfig};
-use crate::credentials::{
-    resolve_llm_config_secret, resolve_stt_config_secret, SystemCredentialVault,
-};
+use crate::credentials::{resolve_stt_config_secret, SystemCredentialVault};
 use crate::llm::{self, LlmConfig, PolishRequest};
 use crate::output;
 use crate::storage;
@@ -2158,20 +2156,29 @@ impl PipelineHandle {
                 message,
             );
         };
+        let mut gateway_key_error: Option<String> = None;
         let llm_api_key = if config.llm_provider == "cloud" {
             session_token
+        } else if !config.polish_enabled {
+            String::new()
         } else {
-            match resolve_llm_config_secret(config, &SystemCredentialVault) {
+            match llm::resolve_llm_api_key(config, false).await {
                 Ok(secret) => secret,
                 Err(error) => {
-                    tracing::warn!("Failed to read LLM credential: {error}");
+                    tracing::warn!("Failed to resolve LLM credential: {error}");
+                    if llm::gateway::is_gateway_provider(&config.llm_provider) {
+                        gateway_key_error = Some(error);
+                    }
                     String::new()
                 }
             }
         };
 
+        // A gateway whose key could not be resolved is reported explicitly
+        // instead of sending an unauthenticated request.
         // Check if polish is enabled and API key / token is available
         if !config.polish_enabled
+            || gateway_key_error.is_some()
             || (config.llm_provider != "cloud"
                 && !llm::has_usable_provider_credentials(&config.llm_provider, &llm_api_key))
         {
@@ -2179,10 +2186,14 @@ impl PipelineHandle {
                 || voice_intent_requires_generated_output(voice_intent.kind)
             {
                 let message = if !config.polish_enabled {
-                    "This voice command needs AI polish. Enable AI polish before drafting, translating, or editing."
+                    "This voice command needs AI polish. Enable AI polish before drafting, translating, or editing.".to_string()
+                } else if let Some(error) = gateway_key_error.as_ref() {
+                    format!("LLM gateway key unavailable: {error}")
                 } else {
                     "This voice command needs a configured LLM provider or Cloud sign-in."
+                        .to_string()
                 };
+                let message = message.as_str();
                 if let Err(error) =
                     crate::commands::ask::show_error_window(&self.app_handle, message.to_string())
                 {
@@ -2201,6 +2212,19 @@ impl PipelineHandle {
                     std::time::Duration::ZERO,
                     "fallback",
                     message,
+                );
+            }
+
+            if let Some(error) = gateway_key_error.as_ref() {
+                // Still deliver the raw transcript, but tell the user why it
+                // was not polished.
+                let _ = self.app_handle.emit(
+                    "pipeline:warning",
+                    crate::error::UserError {
+                        code: "llm_failed".to_string(),
+                        details: Some(format!("LLM gateway key unavailable: {error}")),
+                        retry_count: 0,
+                    },
                 );
             }
 
@@ -2243,6 +2267,7 @@ impl PipelineHandle {
             base_url: config.llm_base_url.clone(),
             max_tokens: 4096,
             temperature: 0.3,
+            gateway: config.llm_gateway.clone(),
         };
         let provider = llm::create_provider(&config.llm_provider, Some(self.shared_client.clone()));
 
@@ -3031,9 +3056,13 @@ impl PipelineHandle {
                 let base = crate::api_base_url();
                 Some((format!("{}/api/proxy/llm", base), true))
             } else {
-                crate::llm::protocol::chat_endpoint(&config.llm_provider, &config.llm_base_url)
-                    .ok()
-                    .map(|endpoint| (endpoint, false))
+                crate::llm::protocol::chat_endpoint_for(
+                    &crate::llm::protocol::LlmTarget::from_config(&config),
+                    &config.llm_model,
+                    true,
+                )
+                .ok()
+                .map(|endpoint| (endpoint, false))
             }
         } else {
             None

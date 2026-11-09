@@ -1,3 +1,5 @@
+import type { LlmGatewayConfig } from '../stores/appStore'
+
 // App metadata
 export const UI_LANGUAGES = [
   { value: 'en', label: 'English' },
@@ -152,11 +154,14 @@ export const LLM_PROVIDERS: { value: string; labelKey: string }[] = [
   { value: 'claude', labelKey: 'providers.llm.claude' },
   { value: 'ollama', labelKey: 'providers.llm.ollama' },
   { value: 'openrouter', labelKey: 'providers.llm.openrouter' },
+  { value: 'gateway', labelKey: 'providers.llm.gateway' },
   { value: 'cloud', labelKey: 'providers.llm.cloud' },
 ] as const
 
+// The enterprise gateway needs headers / key helper settings that only the
+// Settings pane exposes, so onboarding offers the self-contained providers.
 export const ONBOARDING_LLM_PROVIDERS = LLM_PROVIDERS.filter(
-  (provider) => provider.value !== 'cloud',
+  (provider) => provider.value !== 'cloud' && provider.value !== 'gateway',
 )
 
 export const LLM_DEFAULT_CONFIG: Record<string, { baseUrl: string; model: string }> = {
@@ -178,11 +183,35 @@ export const LLM_DEFAULT_CONFIG: Record<string, { baseUrl: string; model: string
   claude: { baseUrl: 'https://api.anthropic.com/v1', model: 'claude-sonnet-4-0' },
   ollama: { baseUrl: 'http://localhost:11434/v1', model: 'llama3.2' },
   openrouter: { baseUrl: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
+  gateway: { baseUrl: '', model: '' },
   cloud: { baseUrl: `${API_BASE_URL}/api/proxy`, model: 'default' },
 }
 
+/**
+ * Whether the provider always needs a user-entered key. The enterprise gateway
+ * decides per auth mode (static key, key command or none), see
+ * `llmGatewayUsesStaticKey`.
+ */
 export function llmProviderRequiresApiKey(provider: string): boolean {
-  return provider.trim().toLowerCase() !== 'ollama'
+  const normalized = provider.trim().toLowerCase()
+  return normalized !== 'ollama' && normalized !== 'gateway'
+}
+
+export const DEFAULT_LLM_GATEWAY_CONFIG: LlmGatewayConfig = {
+  protocol: 'openai',
+  auth_mode: 'static',
+  auth_header: '',
+  auth_prefix: '',
+  key_command: '',
+  key_command_args: [],
+  key_command_json_field: '',
+  key_cache_seconds: 300,
+  key_command_timeout_seconds: 15,
+  extra_headers: [],
+}
+
+export function llmGatewayUsesStaticKey(authMode: string | undefined): boolean {
+  return authMode !== 'command' && authMode !== 'none'
 }
 
 export const LANGUAGES: { value: string; label?: string; labelKey?: string }[] = [

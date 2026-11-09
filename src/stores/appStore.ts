@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { TARGET_LANGUAGES } from '../lib/constants'
+import { DEFAULT_LLM_GATEWAY_CONFIG, TARGET_LANGUAGES } from '../lib/constants'
 
 export type PipelineState =
   | 'idle'
@@ -40,7 +40,33 @@ export type LlmProvider =
   | 'claude'
   | 'ollama'
   | 'openrouter'
+  | 'gateway'
   | 'cloud'
+
+export type LlmGatewayProtocol = 'openai' | 'anthropic' | 'gemini'
+export type LlmGatewayAuthMode = 'static' | 'command' | 'none'
+
+export interface LlmGatewayHeader {
+  name: string
+  value: string
+}
+
+/** Enterprise LLM gateway settings, used when `llm_provider === 'gateway'`. */
+export interface LlmGatewayConfig {
+  protocol: LlmGatewayProtocol
+  auth_mode: LlmGatewayAuthMode
+  /** Empty = protocol default (Authorization / x-api-key / x-goog-api-key). */
+  auth_header: string
+  /** Only used when auth_header is set. */
+  auth_prefix: string
+  key_command: string
+  key_command_args: string[]
+  key_command_json_field: string
+  key_cache_seconds: number
+  key_command_timeout_seconds: number
+  extra_headers: LlmGatewayHeader[]
+}
+
 export type OutputMode = 'keyboard' | 'clipboard'
 export type PasteShortcut = 'ctrlV' | 'ctrlShiftV' | 'shiftInsert'
 export type WindowsSendInputNewlineMode = 'enter' | 'shiftEnter' | 'crlf'
@@ -202,6 +228,7 @@ export interface AppConfig {
   llm_api_key: string
   llm_model: string
   llm_base_url: string
+  llm_gateway: LlmGatewayConfig
   polish_enabled: boolean
   context_adaptation_enabled: boolean
   voice_routing_flags: VoiceRoutingFlags
@@ -734,6 +761,7 @@ const defaultConfig: AppConfig = {
   llm_api_key: '',
   llm_model: 'google/gemini-2.5-flash',
   llm_base_url: 'https://openrouter.ai/api/v1',
+  llm_gateway: DEFAULT_LLM_GATEWAY_CONFIG,
   polish_enabled: true,
   context_adaptation_enabled: true,
   voice_routing_flags: {

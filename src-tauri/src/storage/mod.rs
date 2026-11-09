@@ -342,6 +342,8 @@ pub struct AppConfig {
     pub llm_api_key: String,
     pub llm_model: String,
     pub llm_base_url: String,
+    /// Enterprise LLM gateway settings, used when `llm_provider == "gateway"`.
+    pub llm_gateway: crate::llm::gateway::LlmGatewayConfig,
     pub polish_enabled: bool,
     pub context_adaptation_enabled: bool,
     pub voice_routing_flags: crate::voice_intent::VoiceRoutingFlags,
@@ -399,6 +401,7 @@ impl Default for AppConfig {
             llm_api_key: String::new(),
             llm_model: "google/gemini-2.5-flash".to_string(),
             llm_base_url: "https://openrouter.ai/api/v1".to_string(),
+            llm_gateway: crate::llm::gateway::LlmGatewayConfig::default(),
             polish_enabled: true,
             context_adaptation_enabled: true,
             voice_routing_flags: crate::voice_intent::VoiceRoutingFlags::default(),
@@ -565,6 +568,7 @@ impl AppConfig {
             self.stt_aliyun_qwen_region =
                 crate::stt::aliyun_qwen3_asr::ALIYUN_QWEN3_ASR_REGION_CHINA_MAINLAND.to_string();
         }
+        self.llm_gateway.normalize();
         self.polish_style = normalize_polish_style(&self.polish_style).to_string();
         self.polish_custom_prompt = sanitize_polish_custom_prompt(&self.polish_custom_prompt);
         self.polish_chinese_script = "preserve".to_string();

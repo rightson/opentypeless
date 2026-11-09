@@ -472,7 +472,37 @@
     "mappingResetConfirm": "이 기기에만 저장된 모든 앱 연결 설정을 삭제할까요?",
     "mappingResetConfirmAction": "연결 설정 재설정",
     "mappingNoMappings": "사용자 지정 앱 연결 설정이 없습니다",
-    "dictationMode": "받아쓰기 모드"
+    "dictationMode": "받아쓰기 모드",
+    "gateway": {
+      "description": "OpenAI, Anthropic 또는 Gemini 호환 API를 제공하는 사내 게이트웨이에 연결합니다. 요청은 아래 Base URL로만 전송됩니다.",
+      "protocol": "API 프로토콜",
+      "protocolOpenai": "OpenAI Chat Completions",
+      "protocolAnthropic": "Anthropic Messages",
+      "protocolGemini": "Gemini generateContent",
+      "authMode": "키 출처",
+      "authStatic": "저장된 API 키",
+      "authCommand": "명령을 실행해 키 가져오기",
+      "authNone": "키 없음(게이트웨이가 별도로 인증)",
+      "baseUrlPlaceholder": "https://llm-gateway.example.com/v1",
+      "keyCommand": "키 명령",
+      "keyCommandPlaceholder": "%LOCALAPPDATA%\\Corp\\llm-token.exe",
+      "keyCommandHint": "실행 파일 경로 또는 이름으로, 셸 없이 직접 실행됩니다. %VAR% 및 ${VAR}가 확장됩니다. 표준 출력에는 키(또는 JSON)만 출력해야 합니다.",
+      "keyCommandArgs": "인수",
+      "keyCommandArgsPlaceholder": "--audience\nllm-gateway",
+      "keyCommandArgsHint": "한 줄에 인수 하나. 따옴표가 필요 없습니다.",
+      "keyJsonField": "JSON 필드(선택)",
+      "keyJsonFieldPlaceholder": "accessToken",
+      "keyCacheSeconds": "키 재사용 시간(초)",
+      "keyTimeoutSeconds": "명령 제한 시간(초)",
+      "authHeader": "인증 헤더",
+      "authPrefix": "값 접두사",
+      "extraHeaders": "추가 헤더",
+      "headerName": "헤더 이름",
+      "headerValue": "값",
+      "removeHeader": "헤더 제거",
+      "addHeader": "헤더 추가",
+      "extraHeadersHint": "모든 게이트웨이 요청에 포함됩니다(예: 테넌트 또는 프로젝트 ID). 값은 설정 파일에 저장되므로 비밀 정보를 넣지 마세요."
+    }
   },
   "contextFamilies": {
     "email": "이메일",
@@ -888,7 +918,8 @@
       "claude": "Claude",
       "ollama": "Ollama (로컬)",
       "openrouter": "OpenRouter",
-      "cloud": "OpenTypeless 클라우드"
+      "cloud": "OpenTypeless 클라우드",
+      "gateway": "사내 LLM 게이트웨이"
     }
   }
 }

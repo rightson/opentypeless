@@ -782,4 +782,97 @@ describe('LlmPane', () => {
       expect(screen.queryByRole('radio')).not.toBeInTheDocument()
     })
   })
+  describe('Enterprise gateway', () => {
+    const gatewayConfig = (overrides: Record<string, unknown> = {}) => ({
+      protocol: 'anthropic',
+      auth_mode: 'command',
+      auth_header: '',
+      auth_prefix: '',
+      key_command: 'C:\\Corp\\token.exe',
+      key_command_args: ['--audience', 'llm'],
+      key_command_json_field: '',
+      key_cache_seconds: 300,
+      key_command_timeout_seconds: 15,
+      extra_headers: [{ name: 'X-Tenant', value: 'rd' }],
+      ...overrides,
+    })
+
+    beforeEach(() => {
+      mockAppStore.config.llm_provider = 'gateway'
+      mockAppStore.config.llm_base_url = 'https://llm.corp.example/v1'
+      mockAppStore.config.llm_model = 'claude-sonnet-4-5'
+      ;(mockAppStore.config as any).llm_gateway = gatewayConfig()
+    })
+
+    it('hides the stored key field and tests with the gateway settings in command mode', async () => {
+      vi.mocked(tauri.benchLlmConnection).mockResolvedValue(12)
+      render(<LlmPane />)
+
+      expect(screen.queryByPlaceholderText('Enter API Key')).not.toBeInTheDocument()
+      expect(screen.getByDisplayValue('C:\\Corp\\token.exe')).toBeInTheDocument()
+      expect(screen.getByDisplayValue('X-Tenant')).toBeInTheDocument()
+
+      fireEvent.click(screen.getByRole('button', { name: /test/i }))
+      await waitFor(() =>
+        expect(tauri.benchLlmConnection).toHaveBeenCalledWith(
+          '',
+          'gateway',
+          'https://llm.corp.example/v1',
+          'claude-sonnet-4-5',
+          expect.objectContaining({ auth_mode: 'command', protocol: 'anthropic' }),
+        ),
+      )
+    })
+
+    it('does not run the key command automatically to list models', async () => {
+      vi.useFakeTimers()
+      try {
+        render(<LlmPane />)
+        await vi.advanceTimersByTimeAsync(600)
+        expect(tauri.fetchLlmModels).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+
+    it('shows the API key field for a stored gateway key', () => {
+      ;(mockAppStore.config as any).llm_gateway = gatewayConfig({ auth_mode: 'static' })
+      render(<LlmPane />)
+      expect(screen.getByPlaceholderText('Enter API Key')).toBeInTheDocument()
+      expect(screen.queryByDisplayValue('C:\\Corp\\token.exe')).not.toBeInTheDocument()
+    })
+
+    it('updates protocol, arguments and headers through the gateway config', () => {
+      render(<LlmPane />)
+
+      fireEvent.change(screen.getByLabelText('settings.gateway.protocol'), {
+        target: { value: 'gemini' },
+      })
+      expect(mockAppStore.updateConfig).toHaveBeenLastCalledWith({
+        llm_gateway: expect.objectContaining({ protocol: 'gemini' }),
+      })
+
+      fireEvent.change(screen.getByLabelText('settings.gateway.keyCommandArgs'), {
+        target: { value: 'get-token\n\n--json' },
+      })
+      expect(mockAppStore.updateConfig).toHaveBeenLastCalledWith({
+        llm_gateway: expect.objectContaining({ key_command_args: ['get-token', '--json'] }),
+      })
+
+      fireEvent.click(screen.getByText('settings.gateway.addHeader'))
+      expect(mockAppStore.updateConfig).toHaveBeenLastCalledWith({
+        llm_gateway: expect.objectContaining({
+          extra_headers: [
+            { name: 'X-Tenant', value: 'rd' },
+            { name: '', value: '' },
+          ],
+        }),
+      })
+
+      fireEvent.click(screen.getByLabelText('settings.gateway.removeHeader'))
+      expect(mockAppStore.updateConfig).toHaveBeenLastCalledWith({
+        llm_gateway: expect.objectContaining({ extra_headers: [] }),
+      })
+    })
+  })
 })

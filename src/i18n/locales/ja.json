@@ -472,7 +472,37 @@
     "mappingResetConfirm": "この端末だけに保存されたアプリの対応設定をすべて削除しますか？",
     "mappingResetConfirmAction": "対応設定をリセット",
     "mappingNoMappings": "カスタムのアプリ対応設定はありません",
-    "dictationMode": "ディクテーションモード"
+    "dictationMode": "ディクテーションモード",
+    "gateway": {
+      "description": "OpenAI・Anthropic・Gemini 互換 API を提供する社内ゲートウェイに接続します。リクエストは下の Base URL にのみ送信されます。",
+      "protocol": "API プロトコル",
+      "protocolOpenai": "OpenAI Chat Completions",
+      "protocolAnthropic": "Anthropic Messages",
+      "protocolGemini": "Gemini generateContent",
+      "authMode": "キーの取得元",
+      "authStatic": "保存済み API キー",
+      "authCommand": "コマンドを実行してキーを取得",
+      "authNone": "キーなし（ゲートウェイ側で認証）",
+      "baseUrlPlaceholder": "https://llm-gateway.example.com/v1",
+      "keyCommand": "キー取得コマンド",
+      "keyCommandPlaceholder": "%LOCALAPPDATA%\\Corp\\llm-token.exe",
+      "keyCommandHint": "実行ファイルのパスまたは名前。シェルを介さず直接実行します。%VAR% と ${VAR} は展開されます。標準出力にはキー（または JSON）のみを出力してください。",
+      "keyCommandArgs": "引数",
+      "keyCommandArgsPlaceholder": "--audience\nllm-gateway",
+      "keyCommandArgsHint": "1 行に 1 つの引数。引用符は不要です。",
+      "keyJsonField": "JSON フィールド（任意）",
+      "keyJsonFieldPlaceholder": "accessToken",
+      "keyCacheSeconds": "キーの再利用時間（秒）",
+      "keyTimeoutSeconds": "コマンドのタイムアウト（秒）",
+      "authHeader": "認証ヘッダー",
+      "authPrefix": "値のプレフィックス",
+      "extraHeaders": "追加ヘッダー",
+      "headerName": "ヘッダー名",
+      "headerValue": "値",
+      "removeHeader": "ヘッダーを削除",
+      "addHeader": "ヘッダーを追加",
+      "extraHeadersHint": "すべてのゲートウェイリクエストに付与されます（テナント ID など）。値は設定ファイルに保存されるため、秘密情報は入れないでください。"
+    }
   },
   "contextFamilies": {
     "email": "メールアドレス",
@@ -888,7 +918,8 @@
       "claude": "Claude",
       "ollama": "Ollama (ローカル)",
       "openrouter": "OpenRouter",
-      "cloud": "OpenTypeless クラウド"
+      "cloud": "OpenTypeless クラウド",
+      "gateway": "社内 LLM ゲートウェイ"
     }
   }
 }

@@ -1,5 +1,6 @@
 pub mod cloud;
 pub mod context_policy;
+pub mod gateway;
 pub mod model_capabilities;
 pub mod openai;
 pub mod prompt;
@@ -19,6 +20,16 @@ pub struct LlmConfig {
     pub base_url: String,
     pub max_tokens: u32,
     pub temperature: f64,
+    /// Enterprise gateway settings; only consulted when `provider` is
+    /// `gateway`.
+    #[serde(default)]
+    pub gateway: gateway::LlmGatewayConfig,
+}
+
+impl LlmConfig {
+    pub fn target(&self) -> protocol::LlmTarget<'_> {
+        protocol::LlmTarget::new(&self.provider, &self.base_url, &self.gateway)
+    }
 }
 
 impl Default for LlmConfig {
@@ -30,6 +41,7 @@ impl Default for LlmConfig {
             base_url: "https://open.bigmodel.cn/api/paas/v4".to_string(),
             max_tokens: 4096,
             temperature: 0.3,
+            gateway: gateway::LlmGatewayConfig::default(),
         }
     }
 }
@@ -89,8 +101,39 @@ pub trait LlmProvider: Send + Sync {
     fn name(&self) -> &str;
 }
 
+/// Whether a provider needs a user-entered key before requests make sense.
+/// The gateway decides per auth mode (static key, helper command or none),
+/// so it is resolved by `resolve_llm_api_key` instead of this check.
 pub fn provider_requires_api_key(provider: &str) -> bool {
-    !matches!(provider.trim().to_ascii_lowercase().as_str(), "ollama")
+    !matches!(
+        provider.trim().to_ascii_lowercase().as_str(),
+        "ollama" | gateway::GATEWAY_PROVIDER
+    )
+}
+
+/// Resolves the key for the configured LLM provider. For the enterprise
+/// gateway this may run the configured key helper (cached), so it is async
+/// and can fail with a user-facing message.
+pub async fn resolve_llm_api_key(
+    config: &crate::storage::AppConfig,
+    force_refresh: bool,
+) -> Result<String, String> {
+    let stored = || {
+        crate::credentials::resolve_llm_config_secret(
+            config,
+            &crate::credentials::SystemCredentialVault,
+        )
+        .map_err(|error| error.to_string())
+    };
+    if !gateway::is_gateway_provider(&config.llm_provider) {
+        return stored();
+    }
+    let static_key = if config.llm_gateway.auth_mode() == gateway::AUTH_STATIC {
+        stored()?
+    } else {
+        String::new()
+    };
+    gateway::resolve_api_key(&config.llm_gateway, &static_key, force_refresh).await
 }
 
 pub fn has_usable_provider_credentials(provider: &str, api_key: &str) -> bool {
@@ -132,6 +175,7 @@ mod provider_capability_tests {
         assert!(!provider_requires_api_key(" Ollama "));
         assert!(provider_requires_api_key("openai"));
         assert!(provider_requires_api_key("custom-openai-compatible"));
+        assert!(!provider_requires_api_key("gateway"));
     }
 
     #[test]

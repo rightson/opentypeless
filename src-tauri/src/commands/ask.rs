@@ -1,8 +1,6 @@
 use crate::app_detector::types::RecordingContext;
 use crate::audio::{AudioCaptureHandle, AudioConfig};
-use crate::credentials::{
-    resolve_llm_config_secret, resolve_stt_config_secret, SystemCredentialVault,
-};
+use crate::credentials::{resolve_stt_config_secret, SystemCredentialVault};
 use crate::error::{emit_cloud_session_invalid, managed_cloud_error, AppError};
 use crate::pipeline::PipelineState;
 use crate::storage;
@@ -599,9 +597,9 @@ fn build_byok_ask_body_for_config(
 ) -> Result<serde_json::Value, String> {
     let question = validate_ask_question(question)?;
     let selected_text = selected_text.and_then(sanitize_selected_text_for_ask);
-    let mut body = crate::llm::protocol::build_chat_body(
-        &config.llm_provider,
-        &config.llm_base_url,
+    let target = crate::llm::protocol::LlmTarget::from_config(config);
+    let mut body = crate::llm::protocol::build_chat_body_for(
+        &target,
         &config.llm_model,
         ask_messages_from_sanitized(&question, selected_text.as_ref()),
         ASK_OUTPUT_TOKEN_LIMIT,
@@ -609,7 +607,9 @@ fn build_byok_ask_body_for_config(
         false,
     );
 
-    if config.llm_model.starts_with("glm-") {
+    if target.api_kind() == crate::llm::protocol::LlmApiKind::OpenAiCompatible
+        && config.llm_model.starts_with("glm-")
+    {
         if let Some(obj) = body.as_object_mut() {
             obj.insert(
                 "thinking".to_string(),
@@ -769,8 +769,9 @@ async fn answer_question(
     let llm_api_key = if config.llm_provider == "cloud" {
         String::new()
     } else {
-        resolve_llm_config_secret(config, &SystemCredentialVault)
-            .map_err(|e| AppError::Config(e.to_string()))?
+        crate::llm::resolve_llm_api_key(config, false)
+            .await
+            .map_err(AppError::Config)?
     };
 
     if should_use_byok(config, &llm_api_key) {
@@ -893,9 +894,9 @@ async fn ask_via_byok(
         return Err("LLM base URL must use http or https scheme".to_string());
     }
 
-    let api_kind =
-        crate::llm::protocol::detect_api_kind(&config.llm_provider, &config.llm_base_url);
-    let url = crate::llm::protocol::chat_endpoint(&config.llm_provider, &config.llm_base_url)?;
+    let target = crate::llm::protocol::LlmTarget::from_config(config);
+    let api_kind = target.api_kind();
+    let url = crate::llm::protocol::chat_endpoint_for(&target, &config.llm_model, false)?;
     let request = client
         .post(url)
         .header("Content-Type", "application/json")
@@ -904,21 +905,22 @@ async fn ask_via_byok(
             question,
             selected_text,
         )?)
-        .timeout(crate::llm::protocol::request_timeout(
-            &config.llm_provider,
-            &config.llm_base_url,
+        .timeout(crate::llm::protocol::request_timeout_for(
+            &target,
             &config.llm_model,
         ));
-    let request = crate::llm::protocol::apply_auth_headers(
-        request,
-        &config.llm_provider,
-        &config.llm_base_url,
-        api_key,
-    );
+    let request = crate::llm::protocol::apply_auth_headers_for(request, &target, api_key);
 
     let resp = request.send().await.map_err(|e| e.to_string())?;
     let status = resp.status();
     if !status.is_success() {
+        if matches!(status.as_u16(), 401 | 403)
+            && target.gateway.is_some_and(|g| g.uses_key_command())
+        {
+            // The next Ask re-runs the key helper instead of reusing a
+            // rejected cached key.
+            crate::llm::gateway::invalidate_cached_key(&config.llm_gateway);
+        }
         let text = resp.text().await.unwrap_or_default();
         return Err(response_error(status, text));
     }

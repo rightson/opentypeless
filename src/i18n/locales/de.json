@@ -472,7 +472,37 @@
     "mappingResetConfirm": "Alle nur auf diesem Gerät gespeicherten App-Zuordnungen löschen?",
     "mappingResetConfirmAction": "Zuordnungen zurücksetzen",
     "mappingNoMappings": "Keine eigenen App-Zuordnungen",
-    "dictationMode": "Diktiermodus"
+    "dictationMode": "Diktiermodus",
+    "gateway": {
+      "description": "Verbindung zu einem internen Gateway mit OpenAI-, Anthropic- oder Gemini-kompatibler API. Anfragen gehen nur an die unten angegebene Base URL.",
+      "protocol": "API-Protokoll",
+      "protocolOpenai": "OpenAI Chat Completions",
+      "protocolAnthropic": "Anthropic Messages",
+      "protocolGemini": "Gemini generateContent",
+      "authMode": "Schlüsselquelle",
+      "authStatic": "Gespeicherter API-Schlüssel",
+      "authCommand": "Schlüssel per Befehl abrufen",
+      "authNone": "Kein Schlüssel (Gateway authentifiziert anders)",
+      "baseUrlPlaceholder": "https://llm-gateway.example.com/v1",
+      "keyCommand": "Schlüsselbefehl",
+      "keyCommandPlaceholder": "%LOCALAPPDATA%\\Corp\\llm-token.exe",
+      "keyCommandHint": "Pfad oder Name der ausführbaren Datei, direkt ohne Shell ausgeführt. %VAR% und ${VAR} werden ersetzt. Auf stdout darf nur der Schlüssel (oder JSON) ausgegeben werden.",
+      "keyCommandArgs": "Argumente",
+      "keyCommandArgsPlaceholder": "--audience\nllm-gateway",
+      "keyCommandArgsHint": "Ein Argument pro Zeile. Keine Anführungszeichen nötig.",
+      "keyJsonField": "JSON-Feld (optional)",
+      "keyJsonFieldPlaceholder": "accessToken",
+      "keyCacheSeconds": "Schlüssel wiederverwenden (Sekunden)",
+      "keyTimeoutSeconds": "Befehls-Timeout (Sekunden)",
+      "authHeader": "Auth-Header",
+      "authPrefix": "Wertpräfix",
+      "extraHeaders": "Zusätzliche Header",
+      "headerName": "Header-Name",
+      "headerValue": "Wert",
+      "removeHeader": "Header entfernen",
+      "addHeader": "Header hinzufügen",
+      "extraHeadersHint": "Wird mit jeder Gateway-Anfrage gesendet, z. B. Mandanten- oder Projekt-IDs. Werte werden in der Einstellungsdatei gespeichert – keine Geheimnisse eintragen."
+    }
   },
   "contextFamilies": {
     "email": "E-Mail",
@@ -888,7 +918,8 @@
       "claude": "Claude",
       "ollama": "Ollama (lokal)",
       "openrouter": "OpenRouter",
-      "cloud": "OpenTypeless-Cloud-Dienst"
+      "cloud": "OpenTypeless-Cloud-Dienst",
+      "gateway": "Unternehmens-LLM-Gateway"
     }
   }
 }

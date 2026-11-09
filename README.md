@@ -317,6 +317,18 @@ All settings are accessible from the in-app Settings panel:
 
 API keys are stored locally in the OS credential vault where available, with a local fallback for unsupported environments. No BYOK keys are sent to OpenTypeless servers — STT/LLM requests go directly to the provider you configure.
 
+### Enterprise LLM Gateway
+
+Organizations that route model traffic through an internal gateway can pick **Enterprise LLM gateway** as the AI Polish provider:
+
+- **API protocol** — OpenAI Chat Completions, Anthropic Messages, or Gemini `generateContent`, independent of the gateway's host name.
+- **Key source** — a key stored in the OS credential vault, a key printed by an external helper binary, or no key (for gateways that authenticate by network or a static header).
+- **Key command** — the helper runs directly (no shell) with one argument per line; `%VAR%` and `${VAR}` are expanded, so `%LOCALAPPDATA%\Corp\llm-token.exe` works on managed Windows machines. It must print only the key on stdout, or JSON with a configured field such as `accessToken`. Keys are cached in memory for a configurable time, never written to disk, and refreshed once automatically when the gateway answers 401/403.
+- **Auth header / prefix** — defaults follow the protocol (`Authorization: Bearer`, `x-api-key`, `x-goog-api-key`); override them for gateways such as `api-key: <key>`.
+- **Extra headers** — static tenant, project, or routing headers sent with every request. They are stored in the settings file, so do not put secrets there.
+
+The same settings apply to dictation polish, Ask Anything, the connection test, and model listing. Gateway settings are excluded from settings backups, so importing a backup can never configure a command to run.
+
 ### Cloud Option
 
 OpenTypeless also offers optional managed cloud access so you do not need your own provider keys. Pro and Lifetime Starter plans include shared cloud words for speech recognition and AI rewriting. BYOK remains fully supported.
