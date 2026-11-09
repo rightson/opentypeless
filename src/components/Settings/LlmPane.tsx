@@ -1,9 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '../../stores/appStore'
-import type { PolishStyle } from '../../stores/appStore'
+import type { LlmGatewayConfig, PolishStyle } from '../../stores/appStore'
 import { hasManagedCloudAccess, useAuthStore } from '../../stores/authStore'
-import { LLM_PROVIDERS, LLM_DEFAULT_CONFIG, llmProviderRequiresApiKey } from '../../lib/constants'
+import {
+  LLM_PROVIDERS,
+  LLM_DEFAULT_CONFIG,
+  DEFAULT_LLM_GATEWAY_CONFIG,
+  llmGatewayUsesStaticKey,
+  llmProviderRequiresApiKey,
+} from '../../lib/constants'
 import {
   benchLlmConnection,
   fetchLlmModels,
@@ -29,6 +35,7 @@ import { ContextAdaptationApps } from './ContextAdaptationApps'
 import { TranslationTargets } from './TranslationTargets'
 import { AppStyleMappingDialog } from './AppStyleMappingDialog'
 import { ManageAppMappingsDialog } from './ManageAppMappingsDialog'
+import { GatewayAdvancedSection, GatewayProtocolSection } from './GatewaySettings'
 
 export function LlmPane() {
   const config = useAppStore((s) => s.config)
@@ -43,7 +50,22 @@ export function LlmPane() {
   const { t } = useTranslation()
 
   const isCloud = config.llm_provider === 'cloud'
-  const requiresApiKey = llmProviderRequiresApiKey(config.llm_provider)
+  const isGateway = config.llm_provider === 'gateway'
+  const gateway: LlmGatewayConfig = config.llm_gateway ?? DEFAULT_LLM_GATEWAY_CONFIG
+  // For the gateway the key field depends on the auth mode; a key command or
+  // "none" needs no stored key.
+  const requiresApiKey = isGateway
+    ? llmGatewayUsesStaticKey(gateway.auth_mode)
+    : llmProviderRequiresApiKey(config.llm_provider)
+  const gatewayUsesCommand = isGateway && gateway.auth_mode === 'command'
+  // Only gateway requests carry the gateway settings to the backend.
+  const requestGateway = isGateway ? gateway : undefined
+  const updateGateway = (patch: Partial<LlmGatewayConfig>) => {
+    updateConfig({ llm_gateway: { ...gateway, ...patch } })
+    setLlmTestStatus('idle')
+    setLlmLatencyMs(null)
+    setTestErrorMessage(null)
+  }
   const polishPromptLength = config.polish_custom_prompt.length
   const hasCustomPolishConfig = config.polish_custom_prompt.trim().length > 0
   const goUpgrade = () => {
@@ -166,11 +188,16 @@ export function LlmPane() {
   )
 
   const doFetchModels = useCallback(
-    async (apiKey: string, provider: string, baseUrl: string) => {
+    async (apiKey: string, provider: string, baseUrl: string, gatewayConfig?: LlmGatewayConfig) => {
       if (!baseUrl) return
       setFetchingModels(true)
       try {
-        const list = await fetchLlmModels(apiKey, provider, baseUrl)
+        const list = await fetchLlmModels(
+          apiKey,
+          provider,
+          baseUrl,
+          ...(gatewayConfig ? [gatewayConfig] : []),
+        )
         setModels(list)
       } catch {
         // Do not clear existing cache on failure — avoids infinite retry loop
@@ -185,11 +212,14 @@ export function LlmPane() {
   // Auto-fetch when API key or base URL changes (debounced); skips if models already cached
   useEffect(() => {
     if (isCloud) return
+    // Never run a key helper (which may open an SSO prompt) just because the
+    // pane opened; the refresh button fetches models on demand.
+    if (gatewayUsesCommand) return
     if ((requiresApiKey && !llmApiKey) || !config.llm_base_url) return
     if (models.length > 0) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
-      doFetchModels(llmApiKey, config.llm_provider, config.llm_base_url)
+      doFetchModels(llmApiKey, config.llm_provider, config.llm_base_url, requestGateway)
     }, 500)
     return () => {
       if (debounceRef.current) {
@@ -202,8 +232,10 @@ export function LlmPane() {
     config.llm_provider,
     doFetchModels,
     isCloud,
+    gatewayUsesCommand,
     llmApiKey,
     models.length,
+    requestGateway,
     requiresApiKey,
   ])
 
@@ -217,6 +249,7 @@ export function LlmPane() {
         config.llm_provider,
         config.llm_base_url,
         config.llm_model,
+        ...(requestGateway ? [requestGateway] : []),
       )
       console.log('[LLM Test] Received latency:', ms, 'type:', typeof ms)
       setLlmLatencyMs(ms)
@@ -308,6 +341,8 @@ export function LlmPane() {
 
       {!isCloud && (
         <>
+          {isGateway && <GatewayProtocolSection gateway={gateway} onChange={updateGateway} />}
+
           {requiresApiKey && (
             <FormField label={t('settings.apiKey')}>
               <div className="flex gap-2">
@@ -360,7 +395,9 @@ export function LlmPane() {
                 </datalist>
               </div>
               <button
-                onClick={() => doFetchModels(llmApiKey, config.llm_provider, config.llm_base_url)}
+                onClick={() =>
+                  doFetchModels(llmApiKey, config.llm_provider, config.llm_base_url, requestGateway)
+                }
                 disabled={fetchingModels || !config.llm_base_url || (requiresApiKey && !llmApiKey)}
                 className="px-3 py-2.5 bg-bg-secondary border border-border rounded-[10px] text-[13px] text-text-secondary cursor-pointer hover:border-border-focus disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center gap-1.5"
                 title={t('settings.fetchModels')}
@@ -386,7 +423,10 @@ export function LlmPane() {
                   setTestErrorMessage(null)
                 }}
                 placeholder={
-                  LLM_DEFAULT_CONFIG[config.llm_provider]?.baseUrl ?? 'https://api.openai.com/v1'
+                  isGateway
+                    ? t('settings.gateway.baseUrlPlaceholder')
+                    : LLM_DEFAULT_CONFIG[config.llm_provider]?.baseUrl ||
+                      'https://api.openai.com/v1'
                 }
                 className="min-w-0 flex-1 px-3 py-2.5 bg-bg-secondary border border-border rounded-[10px] text-[13px] text-text-primary outline-none focus:border-border-focus transition-colors"
               />
@@ -404,6 +444,8 @@ export function LlmPane() {
             </div>
             {!requiresApiKey && renderConnectionFeedback(false)}
           </FormField>
+
+          {isGateway && <GatewayAdvancedSection gateway={gateway} onChange={updateGateway} />}
         </>
       )}
 

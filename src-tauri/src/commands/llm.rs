@@ -1,4 +1,6 @@
 use crate::credentials::{resolve_config_secret, SystemCredentialVault};
+use crate::llm::gateway::{self, LlmGatewayConfig};
+use crate::llm::protocol::LlmTarget;
 use crate::SessionTokenStore;
 use crate::{api_base_url, with_desktop_client_version};
 
@@ -57,12 +59,41 @@ fn has_managed_cloud_access(body: &serde_json::Value) -> bool {
     matches!(plan, "pro" | "lifetime_starter")
 }
 
+/// Resolves the key for an ad-hoc settings request (test / bench / model
+/// list). For the gateway this honours the auth mode and may run the key
+/// helper; `force_refresh` skips the cache so "Test" exercises the helper.
+async fn resolve_settings_api_key(
+    api_key: &str,
+    provider: &str,
+    gateway: &LlmGatewayConfig,
+    force_refresh: bool,
+) -> Result<String, String> {
+    if gateway::is_gateway_provider(provider) {
+        let static_key = if gateway.auth_mode() == gateway::AUTH_STATIC {
+            resolve_config_secret(api_key, "llm", provider, &SystemCredentialVault)
+                .map_err(|e| e.to_string())?
+        } else {
+            String::new()
+        };
+        return gateway::resolve_api_key(gateway, &static_key, force_refresh).await;
+    }
+    resolve_config_secret(api_key, "llm", provider, &SystemCredentialVault)
+        .map_err(|e| e.to_string())
+}
+
+fn normalized_gateway(gateway: Option<LlmGatewayConfig>) -> LlmGatewayConfig {
+    let mut gateway = gateway.unwrap_or_default();
+    gateway.normalize();
+    gateway
+}
+
 #[tauri::command]
 pub async fn test_llm_connection(
     api_key: String,
     provider: String,
     base_url: String,
     model: String,
+    gateway: Option<LlmGatewayConfig>,
     token_store: tauri::State<'_, SessionTokenStore>,
     client: tauri::State<'_, reqwest::Client>,
 ) -> Result<bool, String> {
@@ -96,8 +127,8 @@ pub async fn test_llm_connection(
         return Ok(has_managed_cloud_access(&body));
     }
 
-    let api_key = resolve_config_secret(&api_key, "llm", &provider, &SystemCredentialVault)
-        .map_err(|e| e.to_string())?;
+    let gateway = normalized_gateway(gateway);
+    let api_key = resolve_settings_api_key(&api_key, &provider, &gateway, true).await?;
 
     if base_url.is_empty() || !crate::llm::has_usable_provider_credentials(&provider, &api_key) {
         return Ok(false);
@@ -109,10 +140,10 @@ pub async fn test_llm_connection(
         return Err("Base URL must use http or https scheme".to_string());
     }
 
-    let url = crate::llm::protocol::chat_endpoint(&provider, &base_url)?;
-    let body = crate::llm::protocol::build_chat_body(
-        &provider,
-        &base_url,
+    let target = LlmTarget::new(&provider, &base_url, &gateway);
+    let url = crate::llm::protocol::chat_endpoint_for(&target, &model, false)?;
+    let body = crate::llm::protocol::build_chat_body_for(
+        &target,
         &model,
         vec![serde_json::json!({"role": "user", "content": "hi"})],
         1,
@@ -121,11 +152,9 @@ pub async fn test_llm_connection(
     );
 
     let request = client.post(&url).header("Content-Type", "application/json");
-    let resp = crate::llm::protocol::apply_auth_headers(request, &provider, &base_url, &api_key)
+    let resp = crate::llm::protocol::apply_auth_headers_for(request, &target, &api_key)
         .json(&body)
-        .timeout(crate::llm::protocol::request_timeout(
-            &provider, &base_url, &model,
-        ))
+        .timeout(crate::llm::protocol::request_timeout_for(&target, &model))
         .send()
         .await
         .map_err(|e| e.to_string())?;
@@ -135,12 +164,11 @@ pub async fn test_llm_connection(
 
 fn build_fetch_models_request(
     client: &reqwest::Client,
-    provider: &str,
-    base_url: &str,
+    target: &LlmTarget,
     api_key: &str,
     url: &str,
 ) -> reqwest::RequestBuilder {
-    crate::llm::protocol::apply_auth_headers(client.get(url), provider, base_url, api_key)
+    crate::llm::protocol::apply_auth_headers_for(client.get(url), target, api_key)
 }
 
 #[tauri::command]
@@ -148,11 +176,22 @@ pub async fn fetch_llm_models(
     api_key: String,
     provider: String,
     base_url: String,
+    gateway: Option<LlmGatewayConfig>,
     client: tauri::State<'_, reqwest::Client>,
 ) -> Result<Vec<String>, String> {
     if base_url.is_empty() {
         return Ok(vec![]);
     }
+    let gateway = normalized_gateway(gateway);
+    let api_key = if gateway::is_gateway_provider(&provider) {
+        // Model listing is opportunistic; a failing helper surfaces via Test.
+        match resolve_settings_api_key(&api_key, &provider, &gateway, false).await {
+            Ok(key) => key,
+            Err(_) => return Ok(vec![]),
+        }
+    } else {
+        api_key
+    };
     if !crate::llm::has_usable_provider_credentials(&provider, &api_key) {
         return Ok(vec![]);
     }
@@ -163,9 +202,10 @@ pub async fn fetch_llm_models(
         return Err("Base URL must use http or https scheme".to_string());
     }
 
-    let url = crate::llm::protocol::models_endpoint(&provider, &base_url)?;
+    let target = LlmTarget::new(&provider, &base_url, &gateway);
+    let url = crate::llm::protocol::models_endpoint_for(&target)?;
 
-    let resp = build_fetch_models_request(&client, &provider, &base_url, &api_key, &url)
+    let resp = build_fetch_models_request(&client, &target, &api_key, &url)
         .timeout(std::time::Duration::from_secs(10))
         .send()
         .await
@@ -190,7 +230,8 @@ pub async fn fetch_llm_models(
     } else if let Some(data) = body.get("models").and_then(|d| d.as_array()) {
         for item in data {
             if let Some(name) = item.get("name").and_then(|v| v.as_str()) {
-                models.push(name.to_string());
+                // Gemini lists `models/<id>`; the id is what requests use.
+                models.push(name.strip_prefix("models/").unwrap_or(name).to_string());
             }
         }
     }
@@ -250,8 +291,7 @@ mod tests {
     fn model_request_omits_authorization_for_keyless_ollama() {
         let request = build_fetch_models_request(
             &reqwest::Client::new(),
-            "ollama",
-            "http://localhost:11434/v1",
+            &LlmTarget::plain("ollama", "http://localhost:11434/v1"),
             "",
             "http://localhost:11434/v1/models",
         )
@@ -265,8 +305,7 @@ mod tests {
     fn model_request_keeps_authorization_for_keyed_providers() {
         let request = build_fetch_models_request(
             &reqwest::Client::new(),
-            "openai",
-            "https://api.openai.com/v1",
+            &LlmTarget::plain("openai", "https://api.openai.com/v1"),
             "sk-test",
             "https://api.openai.com/v1/models",
         )
@@ -286,6 +325,7 @@ pub async fn bench_llm_connection(
     provider: String,
     base_url: String,
     model: String,
+    gateway: Option<LlmGatewayConfig>,
     token_store: tauri::State<'_, SessionTokenStore>,
     client: tauri::State<'_, reqwest::Client>,
 ) -> Result<u32, String> {
@@ -334,8 +374,8 @@ pub async fn bench_llm_connection(
         return Ok(elapsed);
     }
 
-    let api_key = resolve_config_secret(&api_key, "llm", &provider, &SystemCredentialVault)
-        .map_err(|e| e.to_string())?;
+    let gateway = normalized_gateway(gateway);
+    let api_key = resolve_settings_api_key(&api_key, &provider, &gateway, true).await?;
 
     if base_url.is_empty() || !crate::llm::has_usable_provider_credentials(&provider, &api_key) {
         return Err("API key or base URL is empty".to_string());
@@ -346,10 +386,10 @@ pub async fn bench_llm_connection(
         return Err("Base URL must use http or https scheme".to_string());
     }
 
-    let url = crate::llm::protocol::chat_endpoint(&provider, &base_url)?;
-    let body = crate::llm::protocol::build_chat_body(
-        &provider,
-        &base_url,
+    let target = LlmTarget::new(&provider, &base_url, &gateway);
+    let url = crate::llm::protocol::chat_endpoint_for(&target, &model, false)?;
+    let body = crate::llm::protocol::build_chat_body_for(
+        &target,
         &model,
         vec![serde_json::json!({"role": "user", "content": "hi"})],
         1,
@@ -357,13 +397,12 @@ pub async fn bench_llm_connection(
         false,
     );
 
+    // The key helper ran above, so this measures only the gateway round trip.
     let t0 = std::time::Instant::now();
     let request = client.post(&url).header("Content-Type", "application/json");
-    let resp = crate::llm::protocol::apply_auth_headers(request, &provider, &base_url, &api_key)
+    let resp = crate::llm::protocol::apply_auth_headers_for(request, &target, &api_key)
         .json(&body)
-        .timeout(crate::llm::protocol::request_timeout(
-            &provider, &base_url, &model,
-        ))
+        .timeout(crate::llm::protocol::request_timeout_for(&target, &model))
         .send()
         .await
         .map_err(|e| e.to_string())?;

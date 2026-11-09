@@ -472,7 +472,37 @@
     "mappingResetConfirm": "¿Eliminar todas las asignaciones de aplicaciones guardadas solo en este dispositivo?",
     "mappingResetConfirmAction": "Restablecer asignaciones",
     "mappingNoMappings": "No hay asignaciones personalizadas de aplicaciones",
-    "dictationMode": "Modo de dictado"
+    "dictationMode": "Modo de dictado",
+    "gateway": {
+      "description": "Conecta con un gateway interno que expone una API compatible con OpenAI, Anthropic o Gemini. Las solicitudes solo se envían a la Base URL indicada abajo.",
+      "protocol": "Protocolo de API",
+      "protocolOpenai": "OpenAI Chat Completions",
+      "protocolAnthropic": "Anthropic Messages",
+      "protocolGemini": "Gemini generateContent",
+      "authMode": "Origen de la clave",
+      "authStatic": "Clave API guardada",
+      "authCommand": "Obtener la clave con un comando",
+      "authNone": "Sin clave (el gateway autentica de otra forma)",
+      "baseUrlPlaceholder": "https://llm-gateway.example.com/v1",
+      "keyCommand": "Comando de clave",
+      "keyCommandPlaceholder": "%LOCALAPPDATA%\\Corp\\llm-token.exe",
+      "keyCommandHint": "Ruta o nombre del ejecutable; se ejecuta directamente, sin shell. Se expanden %VAR% y ${VAR}. La salida estándar debe contener solo la clave (o JSON).",
+      "keyCommandArgs": "Argumentos",
+      "keyCommandArgsPlaceholder": "--audience\nllm-gateway",
+      "keyCommandArgsHint": "Un argumento por línea. No hace falta usar comillas.",
+      "keyJsonField": "Campo JSON (opcional)",
+      "keyJsonFieldPlaceholder": "accessToken",
+      "keyCacheSeconds": "Reutilizar la clave durante (segundos)",
+      "keyTimeoutSeconds": "Tiempo límite del comando (segundos)",
+      "authHeader": "Cabecera de autenticación",
+      "authPrefix": "Prefijo del valor",
+      "extraHeaders": "Cabeceras adicionales",
+      "headerName": "Nombre de cabecera",
+      "headerValue": "Valor",
+      "removeHeader": "Quitar cabecera",
+      "addHeader": "Añadir cabecera",
+      "extraHeadersHint": "Se envían en cada solicitud al gateway, p. ej. IDs de tenant o proyecto. Los valores se guardan en el archivo de ajustes: no incluyas secretos."
+    }
   },
   "contextFamilies": {
     "email": "Correo electrónico",
@@ -888,7 +918,8 @@
       "claude": "Claude",
       "ollama": "Ollama (local)",
       "openrouter": "OpenRouter",
-      "cloud": "Nube de OpenTypeless"
+      "cloud": "Nube de OpenTypeless",
+      "gateway": "Gateway LLM empresarial"
     }
   }
 }

@@ -472,7 +472,37 @@
     "mappingResetConfirm": "Delete all device-only app mappings?",
     "mappingResetConfirmAction": "Reset mappings",
     "mappingNoMappings": "No custom app mappings",
-    "dictationMode": "Dictation mode"
+    "dictationMode": "Dictation mode",
+    "gateway": {
+      "description": "Connect to an internal gateway that exposes an OpenAI-, Anthropic- or Gemini-compatible API. Requests go only to the base URL below.",
+      "protocol": "API protocol",
+      "protocolOpenai": "OpenAI Chat Completions",
+      "protocolAnthropic": "Anthropic Messages",
+      "protocolGemini": "Gemini generateContent",
+      "authMode": "Key source",
+      "authStatic": "Stored API key",
+      "authCommand": "Run a command to get the key",
+      "authNone": "No key (gateway authenticates otherwise)",
+      "baseUrlPlaceholder": "https://llm-gateway.example.com/v1",
+      "keyCommand": "Key command",
+      "keyCommandPlaceholder": "%LOCALAPPDATA%\\Corp\\llm-token.exe",
+      "keyCommandHint": "Executable path or name, run directly without a shell. %VAR% and ${VAR} are expanded. It must print only the key (or JSON) on stdout.",
+      "keyCommandArgs": "Arguments",
+      "keyCommandArgsPlaceholder": "--audience\nllm-gateway",
+      "keyCommandArgsHint": "One argument per line. No quoting needed.",
+      "keyJsonField": "JSON field (optional)",
+      "keyJsonFieldPlaceholder": "accessToken",
+      "keyCacheSeconds": "Reuse key for (seconds)",
+      "keyTimeoutSeconds": "Command timeout (seconds)",
+      "authHeader": "Auth header",
+      "authPrefix": "Value prefix",
+      "extraHeaders": "Extra headers",
+      "headerName": "Header name",
+      "headerValue": "Value",
+      "removeHeader": "Remove header",
+      "addHeader": "Add header",
+      "extraHeadersHint": "Sent with every gateway request, e.g. tenant or project IDs. Values are stored in the settings file, so do not put secrets here."
+    }
   },
   "contextFamilies": {
     "email": "Email",
@@ -888,7 +918,8 @@
       "claude": "Claude",
       "ollama": "Ollama (Local)",
       "openrouter": "OpenRouter",
-      "cloud": "OpenTypeless Cloud"
+      "cloud": "OpenTypeless Cloud",
+      "gateway": "Enterprise LLM gateway"
     }
   }
 }

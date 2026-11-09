@@ -10,6 +10,7 @@ import type {
   FamilySceneAssignment,
   BrowserAccessStatus,
   BrowserTarget,
+  LlmGatewayConfig,
 } from '../stores/appStore'
 
 // Pipeline commands
@@ -369,8 +370,9 @@ export async function testLlmConnection(
   provider: string,
   baseUrl: string,
   model: string,
+  gateway?: LlmGatewayConfig,
 ): Promise<boolean> {
-  return invoke('test_llm_connection', { apiKey, provider, baseUrl, model })
+  return invoke('test_llm_connection', { apiKey, provider, baseUrl, model, gateway })
 }
 
 // Latency benchmark — returns round-trip time in milliseconds
@@ -397,8 +399,9 @@ export async function benchLlmConnection(
   provider: string,
   baseUrl: string,
   model: string,
+  gateway?: LlmGatewayConfig,
 ): Promise<number> {
-  return invoke('bench_llm_connection', { apiKey, provider, baseUrl, model })
+  return invoke('bench_llm_connection', { apiKey, provider, baseUrl, model, gateway })
 }
 
 // LLM models
@@ -406,8 +409,9 @@ export async function fetchLlmModels(
   apiKey: string,
   provider: string,
   baseUrl: string,
+  gateway?: LlmGatewayConfig,
 ): Promise<string[]> {
-  return invoke('fetch_llm_models', { apiKey, provider, baseUrl })
+  return invoke('fetch_llm_models', { apiKey, provider, baseUrl, gateway })
 }
 
 // Hotkey

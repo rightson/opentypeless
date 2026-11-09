@@ -472,7 +472,37 @@
     "mappingResetConfirm": "删除所有仅保存在本机的应用映射？",
     "mappingResetConfirmAction": "重置映射",
     "mappingNoMappings": "暂无自定义应用映射",
-    "dictationMode": "听写触发方式"
+    "dictationMode": "听写触发方式",
+    "gateway": {
+      "description": "连接公司内部提供 OpenAI、Anthropic 或 Gemini 兼容 API 的网关。请求只会发送到下方的 Base URL。",
+      "protocol": "API 协议",
+      "protocolOpenai": "OpenAI Chat Completions",
+      "protocolAnthropic": "Anthropic Messages",
+      "protocolGemini": "Gemini generateContent",
+      "authMode": "密钥来源",
+      "authStatic": "已保存的 API 密钥",
+      "authCommand": "执行命令获取密钥",
+      "authNone": "不需要密钥（网关以其他方式认证）",
+      "baseUrlPlaceholder": "https://llm-gateway.example.com/v1",
+      "keyCommand": "密钥命令",
+      "keyCommandPlaceholder": "%LOCALAPPDATA%\\Corp\\llm-token.exe",
+      "keyCommandHint": "可执行文件路径或名称，直接执行、不经过 shell。支持 %VAR% 与 ${VAR} 环境变量展开。标准输出只能包含密钥（或 JSON）。",
+      "keyCommandArgs": "参数",
+      "keyCommandArgsPlaceholder": "--audience\nllm-gateway",
+      "keyCommandArgsHint": "每行一个参数，无需加引号。",
+      "keyJsonField": "JSON 字段（可选）",
+      "keyJsonFieldPlaceholder": "accessToken",
+      "keyCacheSeconds": "密钥缓存时间（秒）",
+      "keyTimeoutSeconds": "命令超时（秒）",
+      "authHeader": "认证 Header",
+      "authPrefix": "值前缀",
+      "extraHeaders": "额外 Header",
+      "headerName": "Header 名称",
+      "headerValue": "值",
+      "removeHeader": "移除 Header",
+      "addHeader": "添加 Header",
+      "extraHeadersHint": "每次网关请求都会附带，例如租户或项目 ID。值以明文保存在设置文件中，请勿放入机密。"
+    }
   },
   "contextFamilies": {
     "email": "邮件",
@@ -888,7 +918,8 @@
       "claude": "Claude",
       "ollama": "Ollama (本地)",
       "openrouter": "OpenRouter",
-      "cloud": "OpenTypeless 云服务"
+      "cloud": "OpenTypeless 云服务",
+      "gateway": "企业 LLM 网关"
     }
   }
 }

@@ -80,6 +80,24 @@ describe('createBackupSettings', () => {
     expect(merged).not.toHaveProperty('custom_app_mappings')
   })
 
+  it('never exports or imports LLM gateway settings, so a backup cannot set a key command', () => {
+    const gateway = {
+      ...useAppStore.getState().config.llm_gateway,
+      auth_mode: 'command' as const,
+      key_command: 'C:\\Corp\\token.exe',
+      extra_headers: [{ name: 'X-Tenant', value: 'rd' }],
+    }
+    const current = { ...useAppStore.getState().config, llm_gateway: gateway }
+
+    expect(JSON.stringify(createBackupSettings(current))).not.toContain('token.exe')
+
+    const merged = mergeBackupSettings(useAppStore.getState().config, {
+      llm_provider: 'gateway',
+      llm_gateway: { ...gateway, key_command: '/tmp/evil' },
+    })
+    expect(merged.llm_gateway.key_command).toBe('')
+  })
+
   it('round-trips recording-limit intent while retaining the compatibility mirror', () => {
     const configured = {
       ...useAppStore.getState().config,

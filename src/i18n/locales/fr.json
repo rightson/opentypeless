@@ -472,7 +472,37 @@
     "mappingResetConfirm": "Supprimer toutes les associations d’applications enregistrées uniquement sur cet appareil ?",
     "mappingResetConfirmAction": "Réinitialiser les associations",
     "mappingNoMappings": "Aucune association d’application personnalisée",
-    "dictationMode": "Mode de dictee"
+    "dictationMode": "Mode de dictee",
+    "gateway": {
+      "description": "Connexion à une passerelle interne exposant une API compatible OpenAI, Anthropic ou Gemini. Les requêtes sont envoyées uniquement à la Base URL ci-dessous.",
+      "protocol": "Protocole API",
+      "protocolOpenai": "OpenAI Chat Completions",
+      "protocolAnthropic": "Anthropic Messages",
+      "protocolGemini": "Gemini generateContent",
+      "authMode": "Source de la clé",
+      "authStatic": "Clé API enregistrée",
+      "authCommand": "Obtenir la clé via une commande",
+      "authNone": "Aucune clé (la passerelle authentifie autrement)",
+      "baseUrlPlaceholder": "https://llm-gateway.example.com/v1",
+      "keyCommand": "Commande de clé",
+      "keyCommandPlaceholder": "%LOCALAPPDATA%\\Corp\\llm-token.exe",
+      "keyCommandHint": "Chemin ou nom de l'exécutable, lancé directement sans shell. %VAR% et ${VAR} sont développés. La sortie standard doit contenir uniquement la clé (ou du JSON).",
+      "keyCommandArgs": "Arguments",
+      "keyCommandArgsPlaceholder": "--audience\nllm-gateway",
+      "keyCommandArgsHint": "Un argument par ligne. Pas besoin de guillemets.",
+      "keyJsonField": "Champ JSON (facultatif)",
+      "keyJsonFieldPlaceholder": "accessToken",
+      "keyCacheSeconds": "Réutiliser la clé pendant (secondes)",
+      "keyTimeoutSeconds": "Délai de la commande (secondes)",
+      "authHeader": "En-tête d'authentification",
+      "authPrefix": "Préfixe de valeur",
+      "extraHeaders": "En-têtes supplémentaires",
+      "headerName": "Nom de l'en-tête",
+      "headerValue": "Valeur",
+      "removeHeader": "Supprimer l'en-tête",
+      "addHeader": "Ajouter un en-tête",
+      "extraHeadersHint": "Envoyés avec chaque requête vers la passerelle (ex. identifiant de tenant ou de projet). Les valeurs sont stockées dans le fichier de réglages : n'y mettez pas de secrets."
+    }
   },
   "contextFamilies": {
     "email": "E-mail",
@@ -888,7 +918,8 @@
       "claude": "Claude",
       "ollama": "Ollama (local)",
       "openrouter": "OpenRouter",
-      "cloud": "Cloud OpenTypeless"
+      "cloud": "Cloud OpenTypeless",
+      "gateway": "Passerelle LLM d'entreprise"
     }
   }
 }
